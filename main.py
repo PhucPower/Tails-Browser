@@ -44,66 +44,65 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         MainWindow.instance = self
-        self.setWindowTitle("Tails browser") #Trusted And Intuitive Local Secure Browser
-        
+        self.setWindowTitle("Tails browser")  # Trusted And Intuitive Local Secure Browser
+
         self.status = QStatusBar()
         self.setStatusBar(self.status)
-        self.dlm = DownloadManager(self.status)
-        
+
         self.connection_status = ""
         self.hovered_link = ""
-        
+        self.download_status = ""
+
         self.history_file = os.path.join(os.getcwd(), "history.json")
         self.history = self.load_history()
-        
+
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_current_tab)
         self.tabs.currentChanged.connect(self.current_tab_changed)
         self.setCentralWidget(self.tabs)
-        
+
         self.new_tab_button = QToolButton()
         self.new_tab_button.setText("+")
         self.new_tab_button.setCursor(Qt.PointingHandCursor)
         self.new_tab_button.setToolTip("Open new tab")
         self.new_tab_button.clicked.connect(self.add_new_tab)
         self.tabs.setCornerWidget(self.new_tab_button, Qt.TopRightCorner)
-        
-        navbar = QToolBar()
-        self.addToolBar(navbar)
-        
+
+        self.toolbar = QToolBar()
+        self.addToolBar(self.toolbar)
+
         back_btn = QAction("<", self)
         back_btn.triggered.connect(lambda: self.tabs.currentWidget().back())
-        navbar.addAction(back_btn)
-        
+        self.toolbar.addAction(back_btn)
+
         forward_btn = QAction(">", self)
         forward_btn.triggered.connect(lambda: self.tabs.currentWidget().forward())
-        navbar.addAction(forward_btn)
-        
+        self.toolbar.addAction(forward_btn)
+
         reload_btn = QAction("⟳", self)
         reload_btn.triggered.connect(lambda: self.tabs.currentWidget().reload())
-        navbar.addAction(reload_btn)
-        
+        self.toolbar.addAction(reload_btn)
+
         home_btn = QAction("🏠", self)
         home_btn.triggered.connect(self.navigate_home)
-        navbar.addAction(home_btn)
-        
+        self.toolbar.addAction(home_btn)
+
         self.url_bar = QLineEdit()
         self.url_bar.returnPressed.connect(self.navigate_to_url)
-        navbar.addWidget(self.url_bar)
-        
+        self.toolbar.addWidget(self.url_bar)
+
         history_btn = QAction("⏰", self)
         history_btn.triggered.connect(self.show_history)
-        navbar.addAction(history_btn)
-        
-        dlm_btn = QAction("⤓", self)
+        self.toolbar.addAction(history_btn)
+
+        self.dlm = DownloadManager(self.status, status_callback=self.update_download_status)
         download_history_action = self.dlm.get_download_history_action()
-        navbar.addAction(download_history_action)
-        
+        self.toolbar.addAction(download_history_action)
+
         self.add_new_tab(QUrl("https://www.google.com"), "Home page")
-        
         self.showMaximized()
-    
+
     def load_history(self):
         if os.path.exists(self.history_file):
             try:
@@ -113,32 +112,38 @@ class MainWindow(QMainWindow):
                 print("Error when load history:", e)
                 return []
         return []
-    
+
     def save_history(self):
         try:
             with open(self.history_file, "w") as f:
                 json.dump(self.history, f, indent=4)
         except Exception as e:
             print("Error when save history:", e)
-    
+
+    def update_download_status(self, msg):
+        self.download_status = msg
+        self.update_status_bar()
+
     def update_status_bar(self):
         status_text = self.connection_status
         if self.hovered_link:
             status_text += " | " + self.hovered_link
+        if self.download_status:
+            status_text += " | " + self.download_status
         self.status.showMessage(status_text)
-    
+
     def update_status_load_started(self):
         sender = self.sender()
         if sender == self.tabs.currentWidget():
-            self.connection_status = "Send the request to GET, TLS Handshake is doing ..."
+            self.connection_status = "Send request GET, TLS Handshake in progress..."
             self.update_status_bar()
-    
+
     def update_status_load_progress(self, progress):
         sender = self.sender()
         if sender == self.tabs.currentWidget():
-            self.connection_status = f"Get data: {progress}%"
+            self.connection_status = f"Receiving data: {progress}%"
             self.update_status_bar()
-    
+
     def update_status_load_finished(self, ok):
         sender = self.sender()
         if sender == self.tabs.currentWidget():
@@ -150,13 +155,12 @@ class MainWindow(QMainWindow):
                 record = {"url": current_url, "timestamp": timestamp}
                 self.history.append(record)
                 self.save_history()
-    
+
     def link_hovered(self, url):
-        
         if self.tabs.currentWidget() and self.tabs.currentWidget().page() == self.sender():
             self.hovered_link = url
             self.update_status_bar()
-    
+
     def add_new_tab(self, qurl=None, label="New Tab"):
         if isinstance(qurl, bool):
             qurl = None
@@ -164,7 +168,7 @@ class MainWindow(QMainWindow):
             qurl = QUrl("https://www.google.com")
         browser = BrowserTab()
         browser.setUrl(qurl)
-        
+
         browser.loadStarted.connect(self.update_status_load_started)
         browser.loadProgress.connect(self.update_status_load_progress)
         browser.loadFinished.connect(self.update_status_load_finished)
@@ -173,39 +177,39 @@ class MainWindow(QMainWindow):
                                        self.tabs.setTabText(self.tabs.indexOf(browser), title))
         browser.page().iconChanged.connect(lambda icon, browser=browser: self.update_tab_icon(icon, browser))
         browser.page().linkHovered.connect(self.link_hovered)
-        
+
         index = self.tabs.addTab(browser, label)
         self.tabs.setCurrentIndex(index)
         return browser
-    
+
     def update_tab_icon(self, icon, browser):
         index = self.tabs.indexOf(browser)
         if index != -1 and not icon.isNull():
             self.tabs.setTabIcon(index, icon)
-    
+
     def close_current_tab(self, index):
         if self.tabs.count() <= 1:
             return
         self.tabs.removeTab(index)
-    
+
     def current_tab_changed(self, index):
         if self.tabs.currentWidget():
             self.update_urlbar(self.tabs.currentWidget().url(), self.tabs.currentWidget())
-    
+
     def navigate_home(self):
         self.tabs.currentWidget().setUrl(QUrl("https://www.google.com"))
-    
+
     def navigate_to_url(self):
         url_text = self.url_bar.text()
         if not url_text.startswith("http"):
             url_text = "http://" + url_text
         self.tabs.currentWidget().setUrl(QUrl(url_text))
-    
+
     def update_urlbar(self, qurl, browser):
         if self.tabs.currentWidget() == browser:
             self.url_bar.setText(qurl.toString())
             self.url_bar.setCursorPosition(0)
-    
+
     def show_history(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Web browsing history")
@@ -221,7 +225,7 @@ class MainWindow(QMainWindow):
         dialog.setLayout(layout)
         dialog.resize(500, 400)
         dialog.exec_()
-    
+
     def navigate_from_history(self, url, dialog):
         self.tabs.currentWidget().setUrl(QUrl(url))
         dialog.close()
@@ -231,4 +235,3 @@ if __name__ == "__main__":
     QApplication.setApplicationName("Tails browser")
     window = MainWindow()
     sys.exit(app.exec_())
-
