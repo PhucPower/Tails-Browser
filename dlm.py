@@ -6,11 +6,13 @@ from PyQt5.QtWebEngineWidgets import QWebEngineDownloadItem
 from PyQt5.QtGui import QIcon
 
 class DownloadManager(QObject):
-    def __init__(self, status_bar: QStatusBar, parent=None, history_file=None):
+    def __init__(self, status_bar: QStatusBar, status_callback=None, parent=None, history_file=None):
         super(DownloadManager, self).__init__(parent)
         self.status_bar = status_bar
+        
+        self.status_callback = status_callback  
         self.history_file = history_file or os.path.join(os.getcwd(), "download_history.json")
-        self.downloads = {}
+        self.downloads = {}  
         self.current_download_item = None
 
         from PyQt5.QtWebEngineWidgets import QWebEngineProfile
@@ -20,7 +22,7 @@ class DownloadManager(QObject):
     @pyqtSlot(QWebEngineDownloadItem)
     def handle_download(self, download_item: QWebEngineDownloadItem):
         from PyQt5.QtWidgets import QFileDialog
-       
+        
         save_path, _ = QFileDialog.getSaveFileName(None, "Save File", os.path.basename(download_item.path()))
         if save_path:
             download_item.setPath(save_path)
@@ -36,7 +38,11 @@ class DownloadManager(QObject):
             download_item.finished.connect(
                 lambda: self.on_download_finished(download_item)
             )
-            self.status_bar.showMessage(f"Downloading: {os.path.basename(save_path)}")
+            msg = f"Downloading: {os.path.basename(save_path)}"
+            if self.status_callback:
+                self.status_callback(msg)
+            else:
+                self.status_bar.showMessage(msg)
         else:
             download_item.cancel()
 
@@ -55,15 +61,22 @@ class DownloadManager(QObject):
             info["prev_time"] = now
         else:
             speed = 0
-        speed_kb = speed / 1024
+        speed_kb = speed / 1024  # KB/s
         file_name = os.path.basename(download_item.path())
-        self.status_bar.showMessage(
-            f"Downloading: {file_name} - {percent}% - {speed_kb:.2f} KB/s"
-        )
+        msg = f"Downloading: {file_name} - {percent}% - {speed_kb:.2f} KB/s"
+        if self.status_callback:
+            self.status_callback(msg)
+        else:
+            self.status_bar.showMessage(msg)
 
     def on_download_finished(self, download_item: QWebEngineDownloadItem):
         file_name = os.path.basename(download_item.path())
-        self.status_bar.showMessage(f"Download completed: {file_name}")
+        msg = f"Download completed: {file_name}"
+        if self.status_callback:
+            self.status_callback(msg)
+        else:
+            self.status_bar.showMessage(msg)
+        
         record = {
             "file_name": file_name,
             "path": download_item.path(),
@@ -77,7 +90,10 @@ class DownloadManager(QObject):
         self.current_download_item = None
 
     def clear_download_status(self):
-        self.status_bar.clearMessage()
+        if self.status_callback:
+            self.status_callback("")
+        else:
+            self.status_bar.clearMessage()
 
     def save_download_history(self, record):
         history = []
@@ -95,6 +111,7 @@ class DownloadManager(QObject):
             print("Error saving download history:", e)
 
     def show_download_history(self):
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem
         dialog = QDialog()
         dialog.setWindowTitle("Download History")
         layout = QVBoxLayout()
@@ -119,4 +136,3 @@ class DownloadManager(QObject):
         action = QAction(QIcon.fromTheme("⤓"), "⤓", self)
         action.triggered.connect(self.show_download_history)
         return action
-
