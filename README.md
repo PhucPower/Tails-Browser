@@ -10,4 +10,6 @@ The browser is built in Python, a simple and basic programming language, it is b
 ## How to download, install and use:
 To install, you just need to use the Git Clone command to download all the source code from GitHub, and to use you just use the ```Python Main.Py``` command to run.
 
+**Note:** If your computer does not have a QtWeb litbrary, install it with a ```pip``` command for Windows, and lie to Linux -based operating systems, namely Ubuntu/Debian you have to install through the ```APT``` package manager.
+
 Thanks for using the project, I will try to update it often.
