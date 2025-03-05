@@ -235,3 +235,4 @@ if __name__ == "__main__":
     QApplication.setApplicationName("Tails browser")
     window = MainWindow()
     sys.exit(app.exec_())
+

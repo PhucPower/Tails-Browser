@@ -9,7 +9,6 @@ class DownloadManager(QObject):
     def __init__(self, status_bar: QStatusBar, status_callback=None, parent=None, history_file=None):
         super(DownloadManager, self).__init__(parent)
         self.status_bar = status_bar
-        
         self.status_callback = status_callback  
         self.history_file = history_file or os.path.join(os.getcwd(), "download_history.json")
         self.downloads = {}  
@@ -22,7 +21,6 @@ class DownloadManager(QObject):
     @pyqtSlot(QWebEngineDownloadItem)
     def handle_download(self, download_item: QWebEngineDownloadItem):
         from PyQt5.QtWidgets import QFileDialog
-        
         save_path, _ = QFileDialog.getSaveFileName(None, "Save File", os.path.basename(download_item.path()))
         if save_path:
             download_item.setPath(save_path)
@@ -84,7 +82,12 @@ class DownloadManager(QObject):
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self.save_download_history(record)
-        QTimer.singleShot(5000, self.clear_download_status)
+        
+        self._clear_timer = QTimer(self)
+        self._clear_timer.setSingleShot(True)
+        self._clear_timer.timeout.connect(self.clear_download_status)
+        self._clear_timer.start(5000)
+        
         if download_item in self.downloads:
             del self.downloads[download_item]
         self.current_download_item = None
@@ -136,3 +139,4 @@ class DownloadManager(QObject):
         action = QAction(QIcon.fromTheme("⤓"), "⤓", self)
         action.triggered.connect(self.show_download_history)
         return action
+
