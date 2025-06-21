@@ -1,7 +1,11 @@
 import sys, os, json, datetime
 from dlm import DownloadManager
+from version import __version__
 from PyQt5.QtCore import QUrl, Qt
 from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QTimer
+import threading
+import requests
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QAction, QLineEdit, 
     QStatusBar, QDialog, QVBoxLayout, QListWidget, QListWidgetItem, 
@@ -44,7 +48,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         MainWindow.instance = self
-        self.setWindowTitle("Tails browser")  # Trusted And Intuitive Local Secure Browser
+        self.is_fallbacking = False
+        self.setWindowTitle(f"Tails browser v{__version__}")  # Trusted And Intuitive Local Secure Browser
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -102,6 +107,16 @@ class MainWindow(QMainWindow):
 
         self.add_new_tab(QUrl("https://www.google.com"), "Home page")
         self.showMaximized()
+        
+        def safe_load_url(self, qurl):
+            self.connection_status = "Loading..."
+            self.update_status_bar()
+            self.tabs.currentWidget().setUrl(qurl)
+
+        def safe_load_with_fallback(self, fallback_url):
+            self.connection_status = "HTTPS not available, switching to HTTP..."
+            self.update_status_bar()
+            QTimer.singleShot(1000, lambda: self.safe_load_url(QUrl(fallback_url)))
 
     def load_history(self):
         if os.path.exists(self.history_file):
@@ -144,17 +159,79 @@ class MainWindow(QMainWindow):
             self.connection_status = f"Receiving data: {progress}%"
             self.update_status_bar()
 
+    def navigate_to_url(self):
+        url_text = self.url_bar.text().strip()
+
+        # Nếu là đường dẫn file local (windows style), chuyển về dạng file:///
+        if os.path.exists(url_text):  # VD: C:\Users\phuc\Documents\test.html
+            local_url = QUrl.fromLocalFile(os.path.abspath(url_text))
+            self.tabs.currentWidget().setUrl(local_url)
+            return
+
+        # Nếu là file://, thì cứ load luôn
+        if url_text.startswith("file://"):
+            self.tabs.currentWidget().setUrl(QUrl(url_text))
+            return
+            
+        if "://" not in url_text:
+            url_text = "https://" + url_text  # Bổ sung giao thức nếu thiếu
+
+        # Nếu không có giao thức, thì thêm https
+        qurl = QUrl(url_text)
+        if qurl.isLocalFile():
+            self.tabs.currentWidget().setUrl(qurl)
+            return
+            
+        
+        # Ghi lại tab hiện tại để đảm bảo dùng đúng browser
+        browser = self.tabs.currentWidget()
+        if browser is None:
+            self.connection_status = "No browser tab found"
+            self.update_status_bar()
+            return
+
+            self.connection_status = "Checking connection..."
+            self.update_status_bar()
+
+        def attempt_request():
+            try:
+                response = requests.head(url_text, timeout=2)
+                if response.status_code < 400:
+                    browser.setUrl(QUrl(url_text))
+                    self.connection_status = "Ready"
+                    self.update_status_bar()
+                    return
+            except Exception:
+                pass
+
+            fallback_url = url_text.replace("https://", "http://", 1)
+            self.connection_status = "HTTPS not available, trying HTTP..."
+            self.update_status_bar()
+            QTimer.singleShot(1000, lambda: browser.setUrl(QUrl(fallback_url)))
+            QTimer.singleShot(3000, self.reset_status)
+
+        QTimer.singleShot(0, attempt_request)
+
+
     def update_status_load_finished(self, ok):
         sender = self.sender()
         if sender == self.tabs.currentWidget():
-            self.connection_status = "Ready"
+            if ok:
+                self.connection_status = "Ready"
+            else:
+                self.connection_status = "Failed to load page"
             self.update_status_bar()
+
             current_url = sender.url().toString()
             if current_url:
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 record = {"url": current_url, "timestamp": timestamp}
                 self.history.append(record)
                 self.save_history()
+
+    def reset_status(self):
+        self.connection_status = "Ready"
+        self.update_status_bar()
 
     def link_hovered(self, url):
         if self.tabs.currentWidget() and self.tabs.currentWidget().page() == self.sender():
@@ -199,12 +276,6 @@ class MainWindow(QMainWindow):
     def navigate_home(self):
         self.tabs.currentWidget().setUrl(QUrl("https://www.google.com"))
 
-    def navigate_to_url(self):
-        url_text = self.url_bar.text()
-        if not url_text.startswith("http"):
-            url_text = "http://" + url_text
-        self.tabs.currentWidget().setUrl(QUrl(url_text))
-
     def update_urlbar(self, qurl, browser):
         if self.tabs.currentWidget() == browser:
             self.url_bar.setText(qurl.toString())
@@ -232,7 +303,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    QApplication.setApplicationName("Tails browser")
+    QApplication.setApplicationName(f"Tails browser v{__version__}")
     window = MainWindow()
     sys.exit(app.exec_())
 
